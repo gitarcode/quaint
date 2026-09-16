@@ -10,13 +10,12 @@ authors = [
 description = "An abstraction layer for SQL databases."
 documentation = "https://docs.rs/quaint/"
 edition = "2018"
-rust = "1.48"
 homepage = "https://github.com/prisma/quaint/"
 keywords = ["mysql", "postgresql", "sqlite", "sql"]
 license = "Apache-2.0"
 name = "quaint"
 readme = "README.md"
-repository = "https://github.com/prisma/quaint/"
+repository = "https://github.com/gitarcode/quaint"
 version = "0.2.0-alpha.13"
 resolver = "2"
 
@@ -44,15 +43,17 @@ all = [
 ]
 
 vendored-openssl = [
-  "postgres-native-tls/vendored-openssl",
   "mysql_async/vendored-openssl"
 ]
 
 postgresql = [
-  "native-tls",
+  "rustls",
+  "rustls-native-certs",
+  "rustls-pemfile",
+  "tokio-postgres-rustls",
+  "p12-keystore",
   "tokio-postgres",
   "postgres-types",
-  "postgres-native-tls",
   "bytes",
   "tokio",
   "bit-vec",
@@ -87,7 +88,11 @@ base64 = { version = "0.12.3", optional = true }
 chrono = { version = "0.4", optional = true, default-features = false }
 lru-cache = { version = "0.1", optional = true }
 serde_json = { version = "1.0.48", optional = true, features = ["float_roundtrip"] }
-native-tls = { version = "0.2", optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
+rustls-pemfile = { version = "2", optional = true }
+tokio-postgres-rustls = { version = "0.14", default-features = false, optional = true }
+p12-keystore = { version = "0.3.2", optional = true }
 bit-vec = { version = "0.6.1", optional = true }
 bytes = { version = "1.0", optional = true }
 mobc = { git = "https://github.com/prisma/mobc",  tag = "1.0.6", optional = true }
@@ -160,12 +165,6 @@ rev = "064a6a50427542e2c166e870027735aab3b52e77"
 # branch = "pgbouncer-mode"
 optional = true
 
-[dependencies.postgres-native-tls]
-git = "https://github.com/pimeys/rust-postgres"
-rev = "064a6a50427542e2c166e870027735aab3b52e77"
-# branch = "pgbouncer-mode"
-optional = true
-
 [dependencies.tokio]
 version = "1.0"
 features = ["rt-multi-thread", "macros", "sync"]
@@ -175,3 +174,13 @@ optional = true
 version = "0.6"
 features = ["compat"]
 optional = true
+
+# The adapter and Quaint must use the same PgBouncer-patched driver source.
+# Consumers repeat these patches at their workspace root.
+[patch."https://github.com/pimeys/rust-postgres"]
+tokio-postgres = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+postgres-types = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+postgres-protocol = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+
+[patch.crates-io]
+tokio-postgres = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }

@@ -1,0 +1,20 @@
+[package]
+name = "quaint-rustls-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+quaint = { path = "../..", default-features = false, features = ["postgresql", "pooled", "json", "uuid", "chrono", "bigdecimal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+url = "2"
+
+[patch."https://github.com/pimeys/rust-postgres"]
+tokio-postgres = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+postgres-types = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+postgres-protocol = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }
+
+[patch.crates-io]
+tokio-postgres = { git = "https://github.com/gitarcode/rust-postgres", rev = "418e011eb5ea53fa2ca8050726df3fb6e224e60d" }

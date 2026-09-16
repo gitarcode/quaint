@@ -1,5 +1,6 @@
 mod conversion;
 mod error;
+mod tls;
 
 use crate::{
     ast::{Query, Value},
@@ -10,13 +11,10 @@ use crate::{
 use async_trait::async_trait;
 use futures::{future::FutureExt, lock::Mutex};
 use lru_cache::LruCache;
-use native_tls::{Certificate, Identity, TlsConnector};
 use percent_encoding::percent_decode;
-use postgres_native_tls::MakeTlsConnector;
 use std::{
     borrow::{Borrow, Cow},
     fmt::{Debug, Display},
-    fs,
     future::Future,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
@@ -78,73 +76,6 @@ pub struct SslParams {
     identity_file: Option<String>,
     identity_password: Hidden<Option<String>>,
     ssl_accept_mode: SslAcceptMode,
-}
-
-#[derive(Debug)]
-struct SslAuth {
-    certificate: Hidden<Option<Certificate>>,
-    identity: Hidden<Option<Identity>>,
-    ssl_accept_mode: SslAcceptMode,
-}
-
-impl Default for SslAuth {
-    fn default() -> Self {
-        Self {
-            certificate: Hidden(None),
-            identity: Hidden(None),
-            ssl_accept_mode: SslAcceptMode::AcceptInvalidCerts,
-        }
-    }
-}
-
-impl SslAuth {
-    fn certificate(&mut self, certificate: Certificate) -> &mut Self {
-        self.certificate = Hidden(Some(certificate));
-        self
-    }
-
-    fn identity(&mut self, identity: Identity) -> &mut Self {
-        self.identity = Hidden(Some(identity));
-        self
-    }
-
-    fn accept_mode(&mut self, mode: SslAcceptMode) -> &mut Self {
-        self.ssl_accept_mode = mode;
-        self
-    }
-}
-
-impl SslParams {
-    async fn into_auth(self) -> crate::Result<SslAuth> {
-        let mut auth = SslAuth::default();
-        auth.accept_mode(self.ssl_accept_mode);
-
-        if let Some(ref cert_file) = self.certificate_file {
-            let cert = fs::read(cert_file).map_err(|err| {
-                Error::builder(ErrorKind::TlsError {
-                    message: format!("cert file not found ({})", err),
-                })
-                .build()
-            })?;
-
-            auth.certificate(Certificate::from_pem(&cert)?);
-        }
-
-        if let Some(ref identity_file) = self.identity_file {
-            let db = fs::read(identity_file).map_err(|err| {
-                Error::builder(ErrorKind::TlsError {
-                    message: format!("identity file not found ({})", err),
-                })
-                .build()
-            })?;
-            let password = self.identity_password.0.as_deref().unwrap_or("");
-            let identity = Identity::from_pkcs12(&db, password)?;
-
-            auth.identity(identity);
-        }
-
-        Ok(auth)
-    }
 }
 
 /// Wraps a connection url and exposes the parsing logic used by Quaint,
@@ -520,24 +451,7 @@ impl PostgreSql {
     pub async fn new(url: PostgresUrl) -> crate::Result<Self> {
         let config = url.to_config();
 
-        let mut tls_builder = TlsConnector::builder();
-
-        {
-            let ssl_params = url.ssl_params();
-            let auth = ssl_params.to_owned().into_auth().await?;
-
-            if let Some(certificate) = auth.certificate.0 {
-                tls_builder.add_root_certificate(certificate);
-            }
-
-            tls_builder.danger_accept_invalid_certs(auth.ssl_accept_mode == SslAcceptMode::AcceptInvalidCerts);
-
-            if let Some(identity) = auth.identity.0 {
-                tls_builder.identity(identity);
-            }
-        }
-
-        let tls = MakeTlsConnector::new(tls_builder.build()?);
+        let tls = tls::connector(url.ssl_params())?;
         let (client, conn) = super::timeout::connect(url.connect_timeout(), config.connect(tls)).await?;
 
         tokio::spawn(conn.map(|r| match r {

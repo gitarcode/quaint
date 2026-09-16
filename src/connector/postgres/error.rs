@@ -268,7 +268,7 @@ impl From<tokio_postgres::error::Error> for Error {
             }
             code => {
                 // This is necessary, on top of the other conversions, for the cases where a
-                // native_tls error comes wrapped in a tokio_postgres error.
+                // rustls error comes wrapped in a tokio_postgres error.
                 if let Some(tls_error) = try_extracting_tls_error(&e) {
                     return tls_error;
                 }
@@ -337,11 +337,20 @@ fn try_extracting_uuid_error(err: &tokio_postgres::error::Error) -> Option<Error
 }
 
 fn try_extracting_tls_error(err: &tokio_postgres::error::Error) -> Option<Error> {
-    use std::error::Error;
-
-    err.source()
-        .and_then(|err| err.downcast_ref::<native_tls::Error>())
-        .map(|err| err.into())
+    // tokio-rustls wraps rustls errors in io::Error, which the driver wraps again.
+    let mut source = std::error::Error::source(err);
+    while let Some(error) = source {
+        if let Some(error) = error.downcast_ref::<rustls::Error>() {
+            return Some(Error::from(error));
+        }
+        if let Some(error) = error.downcast_ref::<std::io::Error>() {
+            if let Some(error) = error.get_ref().and_then(|error| error.downcast_ref::<rustls::Error>()) {
+                return Some(Error::from(error));
+            }
+        }
+        source = error.source();
+    }
+    None
 }
 
 fn try_extracting_io_error(err: &tokio_postgres::error::Error) -> Option<Error> {
@@ -353,14 +362,14 @@ fn try_extracting_io_error(err: &tokio_postgres::error::Error) -> Option<Error> 
         .map(|kind| Error::builder(kind).build())
 }
 
-impl From<native_tls::Error> for Error {
-    fn from(e: native_tls::Error) -> Error {
+impl From<rustls::Error> for Error {
+    fn from(e: rustls::Error) -> Error {
         Error::from(&e)
     }
 }
 
-impl From<&native_tls::Error> for Error {
-    fn from(e: &native_tls::Error) -> Error {
+impl From<&rustls::Error> for Error {
+    fn from(e: &rustls::Error) -> Error {
         let kind = ErrorKind::TlsError {
             message: format!("{}", e),
         };
