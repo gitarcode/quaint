@@ -8,6 +8,8 @@ System roots and PEM roots supplied with `sslcert` remain supported. `sslidentit
 
 Consumers must repeat both Cargo patch tables from this manifest at their workspace root. Cargo ignores patches in dependencies. The registry patch makes `tokio-postgres-rustls` use the same driver source as Quaint.
 
+PostgreSQL text encoding comes from tokio-postgres's UTF8 startup parameter. Connection initialization retains an explicit schema's search path and omits redundant `SET NAMES`, as that command pins sessions in RDS Proxy.
+
 Run `python3 tests/rustls/run.py` with Docker and OpenSSL 3 to exercise certificate verification and SCRAM channel binding. The runner also covers client identities and TLS negotiation. Set `OPENSSL_BIN` if OpenSSL 3 is not the default executable.
 
 Release tested source with immutable tags and pin consumers by commit. CLI binaries and checksums belong to the compatible `gitarcode/prisma-client-rust` release, which consumes this fork. Downloaded Prisma engine executables are separate artifacts and do not inherit this source change.

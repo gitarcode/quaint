@@ -461,19 +461,12 @@ impl PostgreSql {
             }
         }));
 
-        // SET NAMES sets the client text encoding. It needs to be explicitly set for automatic
-        // conversion to and from UTF-8 to happen server-side.
-        //
-        // Relevant docs: https://www.postgresql.org/docs/current/multibyte.html
-        let session_variables = format!(
-            r##"
-            {set_search_path}
-            SET NAMES 'UTF8';
-            "##,
-            set_search_path = SetSearchPath(url.query_params.schema.as_deref())
-        );
-
-        client.simple_query(session_variables.as_str()).await?;
+        // tokio-postgres requests UTF8 in the startup packet. Repeating it with
+        // SET NAMES pins every RDS Proxy session to one database connection.
+        let session_variables = SetSearchPath(url.query_params.schema.as_deref()).to_string();
+        if !session_variables.is_empty() {
+            client.simple_query(session_variables.as_str()).await?;
+        }
 
         Ok(Self {
             client: PostgresClient(client),
@@ -831,6 +824,23 @@ mod tests {
         let row = result_set.first().unwrap();
 
         assert_eq!(Some("\"musti-test\""), row[0].as_str());
+    }
+
+    #[tokio::test]
+    async fn startup_encoding_preserves_unicode_round_trips() -> crate::Result<()> {
+        let client = Quaint::new(&CONN_STR).await?;
+        let encoding = client.query_raw("SHOW client_encoding", &[]).await?;
+        assert_eq!(
+            encoding.first().and_then(|row| row[0].as_str().map(str::to_owned)),
+            Some("UTF8".to_string())
+        );
+        let text = "caf\u{00e9} \u{65e5}\u{672c}\u{8a9e}";
+        let result = client.query_raw("SELECT $1::text", &[text.into()]).await?;
+        assert_eq!(
+            result.first().and_then(|row| row[0].as_str().map(str::to_owned)),
+            Some(text.to_string())
+        );
+        Ok(())
     }
 
     #[tokio::test]
