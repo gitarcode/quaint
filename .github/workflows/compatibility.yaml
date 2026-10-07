@@ -2,12 +2,23 @@ name: Postgres rustls compatibility
 on:
   push:
     branches: [gitar-0.6.11]
+  pull_request:
+    branches: [gitar-0.6.11]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   postgres-tls:
-    runs-on: namespace-profile-gitar
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: fixture-password
+        ports: [5432:5432]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_PSQL: postgres://postgres:fixture-password@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -19,6 +30,9 @@ jobs:
             . -> target
             tests/rustls -> target
       - run: cargo check --locked --no-default-features --features postgresql,pooled,json,uuid,chrono,bigdecimal
+      - run: cargo fmt --check
+      - run: cargo test --locked --lib --no-default-features --features postgresql,pooled,json,uuid,chrono,bigdecimal startup_encoding_preserves_unicode_round_trips
+      - run: cargo test --locked --lib --no-default-features --features postgresql,pooled,json,uuid,chrono,bigdecimal test_custom_search_path
       - run: cargo clippy --locked --manifest-path tests/rustls/Cargo.toml --all-targets
       - run: python3 tests/rustls/run.py
       - name: Verify Postgres dependency tree has no native TLS or OpenSSL
